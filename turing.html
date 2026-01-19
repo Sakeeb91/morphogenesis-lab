@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Membrane Dynamics — Turing Patterns</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-deep: #020408;
+            --bg-mid: #040810;
+            --accent-cyan: #00fff2;
+            --accent-magenta: #ff00aa;
+            --accent-gold: #ffcc00;
+            --text-dim: rgba(255, 255, 255, 0.4);
+            --text-bright: rgba(255, 255, 255, 0.85);
+        }
+
+        body {
+            overflow: hidden;
+            background: var(--bg-deep);
+            font-family: 'Cormorant Garamond', Georgia, serif;
+            color: var(--text-dim);
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+        }
+
+        #canvas-container::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse at 50% 50%, transparent 0%, var(--bg-deep) 70%);
+            pointer-events: none;
+            z-index: 1;
+            opacity: 0.3;
+        }
+
+        #ui-layer {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        #title-block {
+            position: absolute;
+            top: 40px;
+            left: 40px;
+            max-width: 320px;
+        }
+
+        #title-block h1 {
+            font-size: 28px;
+            font-weight: 300;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: var(--text-bright);
+            margin-bottom: 8px;
+            line-height: 1.2;
+        }
+
+        #title-block h1 span {
+            display: block;
+            font-size: 13px;
+            letter-spacing: 0.3em;
+            color: var(--accent-cyan);
+            opacity: 0.7;
+            margin-top: 4px;
+        }
+
+        #description {
+            font-size: 14px;
+            font-style: italic;
+            line-height: 1.6;
+            color: var(--text-dim);
+            margin-top: 16px;
+        }
+
+        #equations {
+            position: absolute;
+            bottom: 40px;
+            left: 40px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            font-weight: 300;
+            line-height: 1.8;
+            color: rgba(255, 255, 255, 0.25);
+            background: rgba(0, 0, 0, 0.3);
+            padding: 16px 20px;
+            border-left: 1px solid rgba(0, 255, 242, 0.2);
+        }
+
+        #equations .highlight {
+            color: var(--accent-cyan);
+            opacity: 0.6;
+        }
+
+        #status {
+            position: absolute;
+            bottom: 40px;
+            right: 40px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--text-dim);
+            text-align: right;
+        }
+
+        #status .live {
+            color: #00ff88;
+        }
+
+        #controls {
+            position: absolute;
+            top: 40px;
+            right: 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: auto;
+        }
+
+        .control-btn {
+            width: 44px;
+            height: 44px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            color: var(--text-dim);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            font-size: 18px;
+        }
+
+        .control-btn:hover {
+            background: rgba(0, 255, 242, 0.1);
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+            box-shadow: 0 0 20px rgba(0, 255, 242, 0.2);
+        }
+
+        .control-btn.active {
+            background: rgba(0, 255, 242, 0.15);
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+        }
+
+        #scheme-selector {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 12px;
+            pointer-events: auto;
+        }
+
+        .scheme-dot {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .scheme-dot::after {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            border-radius: 50%;
+            border: 1px solid transparent;
+            transition: border-color 0.3s ease;
+        }
+
+        .scheme-dot:hover::after,
+        .scheme-dot.active::after {
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .scheme-dot.active {
+            transform: scale(1.1);
+        }
+
+        #scheme-bioluminescent { background: linear-gradient(135deg, #001a33, #00fff2); }
+        #scheme-thermal { background: linear-gradient(135deg, #1a0033, #ff0066, #ffcc00); }
+        #scheme-chlorophyll { background: linear-gradient(135deg, #001a0a, #00ff66); }
+        #scheme-neural { background: linear-gradient(135deg, #0a001a, #aa00ff, #00aaff); }
+
+        #scanlines {
+            position: fixed;
+            inset: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0, 0, 0, 0.03) 2px,
+                rgba(0, 0, 0, 0.03) 4px
+            );
+            pointer-events: none;
+            z-index: 99;
+        }
+
+        #loading {
+            position: fixed;
+            inset: 0;
+            background: var(--bg-deep);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            transition: opacity 0.5s ease;
+        }
+
+        #loading.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #loading-text {
+            font-size: 14px;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            margin-bottom: 24px;
+        }
+
+        #loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 1px solid rgba(0, 255, 242, 0.2);
+            border-top-color: var(--accent-cyan);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <div id="scanlines"></div>
+
+    <div id="ui-layer">
+        <div id="title-block">
+            <h1>
+                Membrane Dynamics
+                <span>Real-time Reaction-Diffusion</span>
+            </h1>
+            <p id="description">Gray-Scott patterns evolving continuously on a spherical membrane via GPU computation.</p>
+        </div>
+
+        <div id="equations">
+            <span class="highlight">∂u/∂t</span> = Dᵤ∇²u − uv² + F(1−u)<br>
+            <span class="highlight">∂v/∂t</span> = Dᵥ∇²v + uv² − (F+k)v<br>
+            <br>
+            <span class="highlight">GPU</span> = Real-time simulation
+        </div>
+
+        <div id="status">
+            <span class="live">● LIVE</span><br>
+            <span id="fps">60 fps</span>
+        </div>
+
+        <div id="controls">
+            <button class="control-btn active" id="btn-play" title="Play/Pause">▶</button>
+            <button class="control-btn" id="btn-reset" title="Reset">↺</button>
+            <button class="control-btn" id="btn-screenshot" title="Screenshot">◉</button>
+        </div>
+
+        <div id="scheme-selector">
+            <div class="scheme-dot active" id="scheme-bioluminescent" title="Bioluminescent"></div>
+            <div class="scheme-dot" id="scheme-thermal" title="Thermal"></div>
+            <div class="scheme-dot" id="scheme-chlorophyll" title="Chlorophyll"></div>
+            <div class="scheme-dot" id="scheme-neural" title="Neural"></div>
+        </div>
+    </div>
+
+    <div id="loading">
+        <div id="loading-text">Initializing GPU Simulation</div>
+        <div id="loading-spinner"></div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+        // ═══════════════════════════════════════════════════════════════
+        // STATE
+        // ═══════════════════════════════════════════════════════════════
+        let renderer, scene, camera, controls, composer, bloomPass;
+        let sphereMesh, glowMesh, particleSystem;
+        let simMaterial, renderTargetA, renderTargetB;
+        let simScene, simCamera, simQuad;
+        let isPlaying = true;
+        let currentScheme = 'bioluminescent';
+        let frameCount = 0;
+        let lastFpsTime = 0;
+
+        // Simulation parameters (adjustable for different patterns)
+        const simParams = {
+            Du: 0.18,      // Diffusion rate U
+            Dv: 0.09,      // Diffusion rate V
+            F: 0.037,      // Feed rate
+            k: 0.06,       // Kill rate
+            dt: 1.0,       // Time step
+            stepsPerFrame: 8  // Simulation steps per render frame
+        };
+
+        // Simulation resolution
+        const SIM_SIZE = 512;
+
+        // ═══════════════════════════════════════════════════════════════
+        // COLOR SCHEMES
+        // ═══════════════════════════════════════════════════════════════
+        const colorSchemes = {
+            bioluminescent: {
+                bg: new THREE.Color(0x000508),
+                low: new THREE.Color(0x002244),
+                mid: new THREE.Color(0x00aacc),
+                high: new THREE.Color(0x44ffff),
+                emissive: new THREE.Color(0x00ffff),
+                glow: new THREE.Color(0x00aaff),
+                particles: new THREE.Color(0x00ffff)
+            },
+            thermal: {
+                bg: new THREE.Color(0x080002),
+                low: new THREE.Color(0x330011),
+                mid: new THREE.Color(0xff2266),
+                high: new THREE.Color(0xffdd44),
+                emissive: new THREE.Color(0xff8800),
+                glow: new THREE.Color(0xff0066),
+                particles: new THREE.Color(0xff4400)
+            },
+            chlorophyll: {
+                bg: new THREE.Color(0x000804),
+                low: new THREE.Color(0x003318),
+                mid: new THREE.Color(0x22cc55),
+                high: new THREE.Color(0x66ff99),
+                emissive: new THREE.Color(0x44ff88),
+                glow: new THREE.Color(0x00ff44),
+                particles: new THREE.Color(0x88ff00)
+            },
+            neural: {
+                bg: new THREE.Color(0x050008),
+                low: new THREE.Color(0x110033),
+                mid: new THREE.Color(0x8844dd),
+                high: new THREE.Color(0x44ddff),
+                emissive: new THREE.Color(0xbb66ff),
+                glow: new THREE.Color(0x8800ff),
+                particles: new THREE.Color(0xcc00ff)
+            }
+        };
+
+        // ═══════════════════════════════════════════════════════════════
+        // GRAY-SCOTT SIMULATION SHADER (runs on GPU)
+        // ═══════════════════════════════════════════════════════════════
+        const grayScottShader = {
+            uniforms: {
+                tPrev: { value: null },
+                resolution: { value: new THREE.Vector2(SIM_SIZE, SIM_SIZE) },
+                Du: { value: simParams.Du },
+                Dv: { value: simParams.Dv },
+                F: { value: simParams.F },
+                k: { value: simParams.k },
+                dt: { value: simParams.dt }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D tPrev;
+                uniform vec2 resolution;
+                uniform float Du;
+                uniform float Dv;
+                uniform float F;
+                uniform float k;
+                uniform float dt;
+
+                varying vec2 vUv;
+
+                void main() {
+                    vec2 texel = 1.0 / resolution;
+
+                    // Sample current state
+                    vec4 center = texture2D(tPrev, vUv);
+                    float u = center.r;
+                    float v = center.g;
+
+                    // Laplacian with wrapping (for sphere-like topology)
+                    vec4 left = texture2D(tPrev, fract(vUv + vec2(-texel.x, 0.0)));
+                    vec4 right = texture2D(tPrev, fract(vUv + vec2(texel.x, 0.0)));
+                    vec4 up = texture2D(tPrev, fract(vUv + vec2(0.0, texel.y)));
+                    vec4 down = texture2D(tPrev, fract(vUv + vec2(0.0, -texel.y)));
+
+                    // 5-point Laplacian stencil
+                    float lapU = left.r + right.r + up.r + down.r - 4.0 * u;
+                    float lapV = left.g + right.g + up.g + down.g - 4.0 * v;
+
+                    // Gray-Scott reaction-diffusion equations
+                    float uvv = u * v * v;
+                    float du = Du * lapU - uvv + F * (1.0 - u);
+                    float dv = Dv * lapV + uvv - (F + k) * v;
+
+                    // Euler integration
+                    float newU = u + dt * du;
+                    float newV = v + dt * dv;
+
+                    // Clamp to valid range
+                    newU = clamp(newU, 0.0, 1.0);
+                    newV = clamp(newV, 0.0, 1.0);
+
+                    gl_FragColor = vec4(newU, newV, 0.0, 1.0);
+                }
+            `
+        };
+
+        // ═══════════════════════════════════════════════════════════════
+        // SPHERE MATERIAL SHADER (maps simulation to sphere)
+        // ═══════════════════════════════════════════════════════════════
+        const sphereVertexShader = `
+            varying vec2 vUv;
+            varying vec3 vNormal;
+            varying vec3 vViewPosition;
+
+            void main() {
+                vUv = uv;
+                vNormal = normalize(normalMatrix * normal);
+                vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                vViewPosition = -mvPosition.xyz;
+                gl_Position = projectionMatrix * mvPosition;
+            }
+        `;
+
+        const sphereFragmentShader = `
+            uniform sampler2D tSim;
+            uniform vec3 colorLow;
+            uniform vec3 colorMid;
+            uniform vec3 colorHigh;
+            uniform vec3 emissiveColor;
+            uniform float time;
+            uniform float fresnelPower;
+            uniform float emissiveIntensity;
+
+            varying vec2 vUv;
+            varying vec3 vNormal;
+            varying vec3 vViewPosition;
+
+            void main() {
+                // Sample simulation texture
+                vec4 sim = texture2D(tSim, vUv);
+                float concentration = sim.g; // V chemical shows the pattern
+
+                // Fresnel effect for edge glow
+                vec3 viewDir = normalize(vViewPosition);
+                float fresnel = pow(1.0 - abs(dot(viewDir, vNormal)), fresnelPower);
+
+                // Triple smoothstep for ultra-soft Bouba transitions
+                float t = smoothstep(0.0, 1.0, concentration);
+                t = smoothstep(0.0, 1.0, t);
+                t = smoothstep(0.0, 1.0, t);
+
+                // Smooth three-way color blend
+                vec3 baseColor;
+                if (t < 0.5) {
+                    float blend = smoothstep(0.0, 0.5, t) * 2.0;
+                    baseColor = mix(colorLow, colorMid, blend);
+                } else {
+                    float blend = smoothstep(0.5, 1.0, t);
+                    baseColor = mix(colorMid, colorHigh, blend);
+                }
+
+                // Strong emissive glow for high concentration areas
+                float emissiveFactor = smoothstep(0.2, 0.6, t);
+                vec3 emission = emissiveColor * emissiveFactor * emissiveIntensity;
+
+                // Gentle organic pulsing
+                float pulse = 0.95 + 0.05 * sin(time * 1.2 + t * 2.0);
+
+                // Combine with stronger base color
+                vec3 finalColor = baseColor * 1.3 * pulse;
+                finalColor += fresnel * emissiveColor * 0.3;
+                finalColor += emission;
+
+                // Fully opaque
+                float alpha = 1.0;
+
+                gl_FragColor = vec4(finalColor, alpha);
+            }
+        `;
+
+        // ═══════════════════════════════════════════════════════════════
+        // INITIALIZATION
+        // ═══════════════════════════════════════════════════════════════
+        function init() {
+            // Renderer
+            renderer = new THREE.WebGLRenderer({
+                antialias: true,
+                alpha: true,
+                powerPreference: 'high-performance'
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.3;
+            renderer.outputColorSpace = THREE.SRGBColorSpace;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            // Main scene
+            scene = new THREE.Scene();
+            scene.background = colorSchemes[currentScheme].bg;
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 0, 4);
+
+            // Controls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.03;
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = 0.3;
+            controls.enablePan = false;
+            controls.minDistance = 2;
+            controls.maxDistance = 8;
+
+            // Setup simulation
+            setupSimulation();
+
+            // Create sphere with simulation texture
+            createSphere();
+
+            // Lighting
+            setupLighting();
+
+            // Particles
+            createParticles();
+
+            // Post-processing
+            setupPostProcessing();
+
+            // UI
+            setupUI();
+
+            // Hide loading
+            setTimeout(() => {
+                document.getElementById('loading').classList.add('hidden');
+            }, 500);
+
+            // Start
+            animate();
+
+            window.addEventListener('resize', onResize);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // SIMULATION SETUP (ping-pong render targets)
+        // ═══════════════════════════════════════════════════════════════
+        function setupSimulation() {
+            // Create render targets for ping-pong
+            const options = {
+                minFilter: THREE.LinearFilter,
+                magFilter: THREE.LinearFilter,
+                format: THREE.RGBAFormat,
+                type: THREE.FloatType,
+                wrapS: THREE.RepeatWrapping,
+                wrapT: THREE.RepeatWrapping
+            };
+
+            renderTargetA = new THREE.WebGLRenderTarget(SIM_SIZE, SIM_SIZE, options);
+            renderTargetB = new THREE.WebGLRenderTarget(SIM_SIZE, SIM_SIZE, options);
+
+            // Simulation scene (orthographic, renders to texture)
+            simScene = new THREE.Scene();
+            simCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+            // Simulation material
+            simMaterial = new THREE.ShaderMaterial({
+                uniforms: THREE.UniformsUtils.clone(grayScottShader.uniforms),
+                vertexShader: grayScottShader.vertexShader,
+                fragmentShader: grayScottShader.fragmentShader
+            });
+
+            // Full-screen quad for simulation
+            simQuad = new THREE.Mesh(
+                new THREE.PlaneGeometry(2, 2),
+                simMaterial
+            );
+            simScene.add(simQuad);
+
+            // Initialize with random seeds
+            initializeSimulation();
+        }
+
+        function initializeSimulation() {
+            // Create initial state texture with random seeds
+            const data = new Float32Array(SIM_SIZE * SIM_SIZE * 4);
+
+            for (let i = 0; i < SIM_SIZE * SIM_SIZE; i++) {
+                const x = (i % SIM_SIZE) / SIM_SIZE;
+                const y = Math.floor(i / SIM_SIZE) / SIM_SIZE;
+
+                // Start with U=1, V=0 everywhere
+                data[i * 4 + 0] = 1.0; // U
+                data[i * 4 + 1] = 0.0; // V
+                data[i * 4 + 2] = 0.0;
+                data[i * 4 + 3] = 1.0;
+            }
+
+            // Add random circular seeds of V
+            const numSeeds = 12;
+            for (let s = 0; s < numSeeds; s++) {
+                const cx = Math.random();
+                const cy = Math.random();
+                const radius = 0.03 + Math.random() * 0.04;
+
+                for (let i = 0; i < SIM_SIZE * SIM_SIZE; i++) {
+                    const x = (i % SIM_SIZE) / SIM_SIZE;
+                    const y = Math.floor(i / SIM_SIZE) / SIM_SIZE;
+
+                    // Distance with wrapping
+                    let dx = Math.abs(x - cx);
+                    let dy = Math.abs(y - cy);
+                    dx = Math.min(dx, 1.0 - dx);
+                    dy = Math.min(dy, 1.0 - dy);
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist < radius) {
+                        const falloff = 1.0 - dist / radius;
+                        data[i * 4 + 0] = 0.5; // Lower U in seed
+                        data[i * 4 + 1] = 0.25 * falloff * falloff; // V seed
+                    }
+                }
+            }
+
+            // Create texture from data
+            const texture = new THREE.DataTexture(
+                data, SIM_SIZE, SIM_SIZE,
+                THREE.RGBAFormat, THREE.FloatType
+            );
+            texture.needsUpdate = true;
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+
+            // Render initial state to both targets
+            const initMaterial = new THREE.MeshBasicMaterial({ map: texture });
+            simQuad.material = initMaterial;
+
+            renderer.setRenderTarget(renderTargetA);
+            renderer.render(simScene, simCamera);
+            renderer.setRenderTarget(renderTargetB);
+            renderer.render(simScene, simCamera);
+            renderer.setRenderTarget(null);
+
+            simQuad.material = simMaterial;
+            texture.dispose();
+            initMaterial.dispose();
+        }
+
+        function stepSimulation() {
+            if (!isPlaying) return;
+
+            for (let i = 0; i < simParams.stepsPerFrame; i++) {
+                // Read from A, write to B
+                simMaterial.uniforms.tPrev.value = renderTargetA.texture;
+                renderer.setRenderTarget(renderTargetB);
+                renderer.render(simScene, simCamera);
+
+                // Swap
+                const temp = renderTargetA;
+                renderTargetA = renderTargetB;
+                renderTargetB = temp;
+            }
+
+            renderer.setRenderTarget(null);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // SPHERE CREATION
+        // ═══════════════════════════════════════════════════════════════
+        function createSphere() {
+            const geometry = new THREE.SphereGeometry(1.4, 128, 64);
+
+            const scheme = colorSchemes[currentScheme];
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    tSim: { value: renderTargetA.texture },
+                    colorLow: { value: scheme.low },
+                    colorMid: { value: scheme.mid },
+                    colorHigh: { value: scheme.high },
+                    emissiveColor: { value: scheme.emissive },
+                    time: { value: 0 },
+                    fresnelPower: { value: 2.0 },
+                    emissiveIntensity: { value: 1.2 }
+                },
+                vertexShader: sphereVertexShader,
+                fragmentShader: sphereFragmentShader,
+                transparent: true,
+                side: THREE.DoubleSide
+            });
+
+            sphereMesh = new THREE.Mesh(geometry, material);
+            scene.add(sphereMesh);
+
+            // Outer glow
+            const glowGeometry = new THREE.SphereGeometry(1.45, 64, 32);
+            const glowMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    glowColor: { value: scheme.glow },
+                    time: { value: 0 }
+                },
+                vertexShader: `
+                    varying vec3 vNormal;
+                    void main() {
+                        vNormal = normalize(normalMatrix * normal);
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    uniform vec3 glowColor;
+                    uniform float time;
+                    varying vec3 vNormal;
+                    void main() {
+                        float intensity = pow(0.65 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.0);
+                        float pulse = 0.85 + 0.15 * sin(time * 1.0);
+                        gl_FragColor = vec4(glowColor, intensity * 0.12 * pulse);
+                    }
+                `,
+                transparent: true,
+                side: THREE.BackSide,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+
+            glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
+            scene.add(glowMesh);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // LIGHTING
+        // ═══════════════════════════════════════════════════════════════
+        function setupLighting() {
+            const ambient = new THREE.AmbientLight(0x202030, 0.4);
+            scene.add(ambient);
+
+            const keyLight = new THREE.DirectionalLight(0xffffff, 0.6);
+            keyLight.position.set(5, 5, 5);
+            scene.add(keyLight);
+
+            const fillLight = new THREE.DirectionalLight(0x4488ff, 0.3);
+            fillLight.position.set(-5, 0, -5);
+            scene.add(fillLight);
+
+            const rimLight = new THREE.DirectionalLight(0x00ffff, 0.2);
+            rimLight.position.set(0, 5, -5);
+            scene.add(rimLight);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // PARTICLES
+        // ═══════════════════════════════════════════════════════════════
+        function createParticles() {
+            const count = 400;
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(count * 3);
+
+            for (let i = 0; i < count; i++) {
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(2 * Math.random() - 1);
+                const r = 2.5 + Math.random() * 5;
+
+                positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+                positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+                positions[i * 3 + 2] = r * Math.cos(phi);
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+            const material = new THREE.PointsMaterial({
+                size: 0.025,
+                color: colorSchemes[currentScheme].particles,
+                transparent: true,
+                opacity: 0.4,
+                blending: THREE.AdditiveBlending,
+                sizeAttenuation: true
+            });
+
+            particleSystem = new THREE.Points(geometry, material);
+            scene.add(particleSystem);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // POST-PROCESSING
+        // ═══════════════════════════════════════════════════════════════
+        function setupPostProcessing() {
+            composer = new EffectComposer(renderer);
+            composer.addPass(new RenderPass(scene, camera));
+
+            bloomPass = new UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth, window.innerHeight),
+                0.5, 0.4, 0.5
+            );
+            composer.addPass(bloomPass);
+            composer.addPass(new OutputPass());
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // UI
+        // ═══════════════════════════════════════════════════════════════
+        function setupUI() {
+            document.getElementById('btn-play').addEventListener('click', () => {
+                isPlaying = !isPlaying;
+                const btn = document.getElementById('btn-play');
+                btn.textContent = isPlaying ? '▶' : '❚❚';
+                btn.classList.toggle('active', isPlaying);
+            });
+
+            document.getElementById('btn-reset').addEventListener('click', () => {
+                initializeSimulation();
+            });
+
+            document.getElementById('btn-screenshot').addEventListener('click', () => {
+                composer.render();
+                const link = document.createElement('a');
+                link.download = `turing-live-${Date.now()}.png`;
+                link.href = renderer.domElement.toDataURL('image/png');
+                link.click();
+            });
+
+            document.querySelectorAll('.scheme-dot').forEach(dot => {
+                dot.addEventListener('click', () => {
+                    const scheme = dot.id.replace('scheme-', '');
+                    updateColorScheme(scheme);
+                });
+            });
+        }
+
+        function updateColorScheme(schemeName) {
+            currentScheme = schemeName;
+            const scheme = colorSchemes[schemeName];
+
+            scene.background = scheme.bg;
+
+            if (sphereMesh) {
+                sphereMesh.material.uniforms.colorLow.value = scheme.low;
+                sphereMesh.material.uniforms.colorMid.value = scheme.mid;
+                sphereMesh.material.uniforms.colorHigh.value = scheme.high;
+                sphereMesh.material.uniforms.emissiveColor.value = scheme.emissive;
+            }
+
+            if (glowMesh) {
+                glowMesh.material.uniforms.glowColor.value = scheme.glow;
+            }
+
+            if (particleSystem) {
+                particleSystem.material.color = scheme.particles;
+            }
+
+            document.querySelectorAll('.scheme-dot').forEach(d => d.classList.remove('active'));
+            document.getElementById(`scheme-${schemeName}`).classList.add('active');
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // ANIMATION LOOP
+        // ═══════════════════════════════════════════════════════════════
+        function animate(time = 0) {
+            requestAnimationFrame(animate);
+
+            // Step simulation
+            stepSimulation();
+
+            // Update sphere texture reference
+            if (sphereMesh) {
+                sphereMesh.material.uniforms.tSim.value = renderTargetA.texture;
+                sphereMesh.material.uniforms.time.value = time * 0.001;
+            }
+
+            if (glowMesh) {
+                glowMesh.material.uniforms.time.value = time * 0.001;
+            }
+
+            // Rotate particles
+            if (particleSystem) {
+                particleSystem.rotation.y += 0.0003;
+                particleSystem.rotation.x += 0.0001;
+            }
+
+            controls.update();
+            composer.render();
+
+            // FPS counter
+            frameCount++;
+            if (time - lastFpsTime > 1000) {
+                document.getElementById('fps').textContent = `${frameCount} fps`;
+                frameCount = 0;
+                lastFpsTime = time;
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // RESIZE
+        // ═══════════════════════════════════════════════════════════════
+        function onResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // START
+        // ═══════════════════════════════════════════════════════════════
+        init();
+    </script>
+</body>
+</html>
