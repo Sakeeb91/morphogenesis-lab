@@ -2,6 +2,10 @@
 
 Interactive GPU-accelerated simulations of pattern formation in nature. Explore reaction-diffusion systems and Laplacian growth instabilities through real-time 3D visualizations.
 
+## Live Demo
+
+**[morphogenesis-lab.pages.dev](https://morphogenesis-lab.pages.dev/turing.html)** — Try the real-time Turing patterns simulation in your browser.
+
 ## Overview
 
 This project implements two fundamental models of biological pattern formation:
