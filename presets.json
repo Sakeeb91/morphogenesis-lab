@@ -1,0 +1,68 @@
+{
+  "lightning": {
+    "description": "Electrical discharge / lightning bolt",
+    "num_particles": 3000,
+    "eta": 6.0,
+    "r1": 0.5,
+    "mode_2d": false,
+    "seeds": [[0, 0, 0]],
+    "attractors": [
+      {"x": 0, "y": 60, "z": 0, "strength": 80.0}
+    ],
+    "colors": {
+      "start_hue": 0.6,
+      "end_hue": 0.15
+    },
+    "bloom_strength": 1.2
+  },
+  "neurons": {
+    "description": "Branching neural dendrites",
+    "num_particles": 3500,
+    "eta": 4.0,
+    "r1": 0.5,
+    "mode_2d": false,
+    "seeds": [[0, 0, 0]],
+    "attractors": [
+      {"x": 30, "y": 20, "z": 10, "strength": 50.0},
+      {"x": -25, "y": 15, "z": -20, "strength": 45.0},
+      {"x": 10, "y": -25, "z": 30, "strength": 40.0},
+      {"x": -15, "y": 30, "z": -10, "strength": 35.0}
+    ],
+    "colors": {
+      "start_hue": 0.6,
+      "end_hue": 0.15
+    },
+    "bloom_strength": 0.8
+  },
+  "moss": {
+    "description": "Organic blob growth like lichen or moss",
+    "num_particles": 2500,
+    "eta": 1.5,
+    "r1": 0.5,
+    "mode_2d": false,
+    "seeds": [[0, 0, 0]],
+    "attractors": [],
+    "colors": {
+      "start_hue": 0.35,
+      "end_hue": 0.25
+    },
+    "bloom_strength": 0.5
+  },
+  "cities": {
+    "description": "Urban sprawl patterns on a flat plane",
+    "num_particles": 2000,
+    "eta": 2.5,
+    "r1": 0.5,
+    "mode_2d": true,
+    "seeds": [[0, 0, 0]],
+    "attractors": [
+      {"x": 40, "y": 0, "z": 0, "strength": 60.0},
+      {"x": -40, "y": 0, "z": 0, "strength": 60.0}
+    ],
+    "colors": {
+      "start_hue": 0.1,
+      "end_hue": 0.05
+    },
+    "bloom_strength": 0.6
+  }
+}
