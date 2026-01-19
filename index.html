@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laplacian Instability Simulator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            overflow: hidden;
+            background: #0a0a15;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+        }
+        #info {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            color: #8899aa;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 100;
+        }
+        #progress {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #88aacc;
+            font-size: 14px;
+            font-weight: 500;
+            pointer-events: none;
+            z-index: 100;
+            text-shadow: 0 0 10px rgba(68, 136, 255, 0.5);
+        }
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #4488ff;
+            font-size: 18px;
+            z-index: 200;
+        }
+        .lil-gui {
+            --background-color: rgba(10, 10, 21, 0.9);
+            --title-background-color: rgba(20, 30, 50, 0.9);
+            --widget-color: #2a3a5a;
+            --hover-color: #3a4a6a;
+            --focus-color: #4488ff;
+            --number-color: #88ccff;
+            --string-color: #88ffaa;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <div id="info">Laplacian Instability Simulator</div>
+    <div id="progress"></div>
+    <div id="loading">Loading simulation data...</div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+        import GUI from 'three/addons/libs/lil-gui.module.min.js';
+
+        // ============== State ==============
+        let renderer, scene, camera, controls, composer;
+        let particleMesh, attractorMeshes = [];
+        let simulationData = null;
+        let currentGenTime = null;
+        let animationFrame = 0;
+        let isPlaying = true;
+        let lastFrameTime = 0;
+
+        // ============== Settings ==============
+        const settings = {
+            // Simulation
+            preset: 'neurons',
+            mode2D: false,
+            eta: 4.0,
+
+            // Attractors
+            attractor1X: 30,
+            attractor1Y: 20,
+            attractor1Z: 10,
+            attractor1Strength: 50,
+            showAttractors: true,
+
+            // Animation
+            isPlaying: true,
+            speed: 100, // particles per second
+            reset: function() { resetAnimation(); },
+
+            // Visualization
+            autoRotate: true,
+            rotateSpeed: 0.5,
+            bloomStrength: 0.8,
+            bloomRadius: 0.4,
+            bloomThreshold: 0.85,
+            fogDensity: 0.012,
+
+            // Export
+            screenshot: function() { saveScreenshot(); },
+
+            // Regenerate
+            regenerate: function() { regenerateSimulation(); }
+        };
+
+        // ============== Initialize ==============
+        async function init() {
+            // Renderer
+            renderer = new THREE.WebGLRenderer({
+                antialias: true,
+                powerPreference: 'high-performance'
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.2;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0a15);
+            scene.fog = new THREE.FogExp2(0x0a0a0f, settings.fogDensity);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
+            camera.position.set(0, 30, 50);
+
+            // Controls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.autoRotate = settings.autoRotate;
+            controls.autoRotateSpeed = settings.rotateSpeed;
+
+            // Lighting
+            setupLighting();
+
+            // Post-processing
+            setupPostProcessing();
+
+            // GUI
+            setupGUI();
+
+            // Load initial data
+            await loadSimulationData();
+
+            // Start polling for new data
+            setInterval(checkForNewData, 2000);
+
+            // Start render loop
+            animate();
+
+            // Handle resize
+            window.addEventListener('resize', onResize);
+
+            // Hide loading
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        // ============== Lighting ==============
+        function setupLighting() {
+            // Ambient
+            const ambient = new THREE.AmbientLight(0x404060, 0.4);
+            scene.add(ambient);
+
+            // Hemisphere
+            const hemi = new THREE.HemisphereLight(0x6688cc, 0x223344, 0.5);
+            scene.add(hemi);
+
+            // Point light at origin
+            const point = new THREE.PointLight(0x4488ff, 1.5, 80);
+            point.position.set(0, 0, 0);
+            scene.add(point);
+
+            // Directional
+            const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+            dir.position.set(20, 30, 20);
+            scene.add(dir);
+        }
+
+        // ============== Post-Processing ==============
+        function setupPostProcessing() {
+            composer = new EffectComposer(renderer);
+
+            const renderPass = new RenderPass(scene, camera);
+            composer.addPass(renderPass);
+
+            const bloomPass = new UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth, window.innerHeight),
+                settings.bloomStrength,
+                settings.bloomRadius,
+                settings.bloomThreshold
+            );
+            composer.addPass(bloomPass);
+
+            const outputPass = new OutputPass();
+            composer.addPass(outputPass);
+        }
+
+        // ============== GUI ==============
+        function setupGUI() {
+            const gui = new GUI({ title: 'Controls' });
+
+            // Simulation folder
+            const simFolder = gui.addFolder('Simulation');
+            simFolder.add(settings, 'preset', ['lightning', 'neurons', 'moss', 'cities'])
+                .name('Preset')
+                .onChange(() => {
+                    // Update settings based on preset
+                    loadPresetSettings(settings.preset);
+                });
+            simFolder.add(settings, 'regenerate').name('Regenerate');
+            simFolder.add(settings, 'mode2D').name('2D Mode');
+            simFolder.add(settings, 'eta', 0, 8, 0.5).name('ETA');
+
+            // Attractors folder
+            const attrFolder = gui.addFolder('Attractors');
+            attrFolder.add(settings, 'attractor1X', -50, 50, 1).name('Attractor X');
+            attrFolder.add(settings, 'attractor1Y', -50, 50, 1).name('Attractor Y');
+            attrFolder.add(settings, 'attractor1Z', -50, 50, 1).name('Attractor Z');
+            attrFolder.add(settings, 'attractor1Strength', 0, 100, 5).name('Strength');
+            attrFolder.add(settings, 'showAttractors').name('Show Attractors').onChange(updateAttractorVisibility);
+            attrFolder.close();
+
+            // Animation folder
+            const animFolder = gui.addFolder('Animation');
+            animFolder.add(settings, 'isPlaying').name('Play/Pause').onChange(v => { isPlaying = v; });
+            animFolder.add(settings, 'speed', 10, 200, 10).name('Speed (p/sec)');
+            animFolder.add(settings, 'reset').name('Reset');
+
+            // Visualization folder
+            const visFolder = gui.addFolder('Visualization');
+            visFolder.add(settings, 'autoRotate').name('Auto Rotate').onChange(v => {
+                controls.autoRotate = v;
+            });
+            visFolder.add(settings, 'rotateSpeed', 0.1, 2, 0.1).name('Rotate Speed').onChange(v => {
+                controls.autoRotateSpeed = v;
+            });
+            visFolder.add(settings, 'bloomStrength', 0, 2, 0.1).name('Bloom').onChange(updateBloom);
+            visFolder.add(settings, 'fogDensity', 0, 0.05, 0.002).name('Fog').onChange(v => {
+                scene.fog.density = v;
+            });
+            visFolder.close();
+
+            // Export folder
+            const exportFolder = gui.addFolder('Export');
+            exportFolder.add(settings, 'screenshot').name('Screenshot');
+            exportFolder.close();
+        }
+
+        function updateBloom() {
+            const bloomPass = composer.passes[1];
+            if (bloomPass) {
+                bloomPass.strength = settings.bloomStrength;
+            }
+        }
+
+        function updateAttractorVisibility() {
+            attractorMeshes.forEach(mesh => {
+                mesh.visible = settings.showAttractors;
+            });
+        }
+
+        // ============== Load Simulation Data ==============
+        async function loadSimulationData() {
+            try {
+                const response = await fetch('./output/growth_data.json?t=' + Date.now());
+                if (!response.ok) {
+                    console.warn('No simulation data found. Run growth_sim.py first.');
+                    document.getElementById('loading').textContent = 'Run: python growth_sim.py --preset neurons';
+                    return;
+                }
+                const data = await response.json();
+                simulationData = data;
+                currentGenTime = data.metadata.generation_time;
+
+                // Update info
+                const info = document.getElementById('info');
+                info.textContent = `${data.metadata.preset} | ${data.metadata.num_particles} particles | ETA: ${data.metadata.eta}`;
+
+                // Create particle visualization
+                createParticles(data.particles);
+                createAttractors(data.attractors);
+
+                // Reset animation
+                animationFrame = 0;
+
+            } catch (err) {
+                console.error('Error loading simulation data:', err);
+            }
+        }
+
+        async function checkForNewData() {
+            try {
+                const response = await fetch('./output/growth_data.json?t=' + Date.now());
+                if (!response.ok) return;
+
+                const data = await response.json();
+                if (data.metadata.generation_time !== currentGenTime) {
+                    console.log('New simulation data detected, reloading...');
+                    await loadSimulationData();
+                }
+            } catch (err) {
+                // Silently ignore polling errors
+            }
+        }
+
+        // ============== Create Particles ==============
+        function createParticles(particles) {
+            // Remove existing
+            if (particleMesh) {
+                scene.remove(particleMesh);
+                particleMesh.geometry.dispose();
+                particleMesh.material.dispose();
+            }
+
+            const count = particles.length;
+            const geometry = new THREE.SphereGeometry(0.5, 16, 12);
+            const material = new THREE.MeshStandardMaterial({
+                metalness: 0.2,
+                roughness: 0.6,
+                envMapIntensity: 0.5
+            });
+
+            particleMesh = new THREE.InstancedMesh(geometry, material, count);
+
+            const dummy = new THREE.Object3D();
+            const color = new THREE.Color();
+
+            for (let i = 0; i < count; i++) {
+                const p = particles[i];
+
+                // Position
+                dummy.position.set(p[0], p[1], p[2]);
+                dummy.updateMatrix();
+                particleMesh.setMatrixAt(i, dummy.matrix);
+
+                // Color - Forest gradient based on growth order
+                const t = i / count;
+                const hue = lerp(0.6, 0.15, t);  // Deep blue to yellow
+                const sat = lerp(0.8, 0.9, t);
+                const light = lerp(0.4, 0.55, t);
+                color.setHSL(hue, sat, light);
+                particleMesh.setColorAt(i, color);
+            }
+
+            particleMesh.instanceMatrix.needsUpdate = true;
+            particleMesh.instanceColor.needsUpdate = true;
+            particleMesh.count = 0; // Start with no visible particles
+
+            scene.add(particleMesh);
+        }
+
+        // ============== Create Attractors ==============
+        function createAttractors(attractors) {
+            // Remove existing
+            attractorMeshes.forEach(mesh => {
+                scene.remove(mesh);
+                mesh.geometry.dispose();
+                mesh.material.dispose();
+            });
+            attractorMeshes = [];
+
+            if (!attractors || attractors.length === 0) return;
+
+            for (const attr of attractors) {
+                const size = Math.log(attr.strength + 1) * 0.5 + 1;
+                const geometry = new THREE.SphereGeometry(size, 16, 12);
+                const material = new THREE.MeshStandardMaterial({
+                    color: 0xff3333,
+                    transparent: true,
+                    opacity: 0.4,
+                    emissive: 0xff0000,
+                    emissiveIntensity: 0.3
+                });
+
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.position.set(attr.x, attr.y, attr.z);
+                mesh.visible = settings.showAttractors;
+
+                scene.add(mesh);
+                attractorMeshes.push(mesh);
+            }
+        }
+
+        // ============== Animation ==============
+        function animate(time = 0) {
+            requestAnimationFrame(animate);
+
+            // Update controls
+            controls.update();
+
+            // Animate particle growth
+            if (isPlaying && simulationData && particleMesh) {
+                const dt = (time - lastFrameTime) / 1000;
+                lastFrameTime = time;
+
+                if (dt > 0 && dt < 0.5) {  // Sanity check
+                    const particlesToShow = Math.floor(settings.speed * dt);
+                    const totalParticles = simulationData.particles.length;
+
+                    if (animationFrame < totalParticles) {
+                        animationFrame = Math.min(animationFrame + particlesToShow, totalParticles);
+                        particleMesh.count = animationFrame;
+
+                        // Update progress
+                        document.getElementById('progress').textContent =
+                            `${animationFrame} / ${totalParticles} particles`;
+
+                        // Camera pull-back on completion
+                        if (animationFrame >= totalParticles) {
+                            onGrowthComplete();
+                        }
+                    }
+                }
+            }
+
+            // Render with post-processing
+            composer.render();
+        }
+
+        function resetAnimation() {
+            animationFrame = 0;
+            if (particleMesh) {
+                particleMesh.count = 0;
+            }
+            document.getElementById('progress').textContent = '';
+        }
+
+        function onGrowthComplete() {
+            document.getElementById('progress').textContent += ' - Complete!';
+
+            // Calculate bounding sphere
+            if (!simulationData) return;
+
+            let maxDist = 0;
+            for (const p of simulationData.particles) {
+                const dist = Math.sqrt(p[0]*p[0] + p[1]*p[1] + p[2]*p[2]);
+                if (dist > maxDist) maxDist = dist;
+            }
+
+            // Smoothly zoom out
+            const targetDist = maxDist * 2.5;
+            const startPos = camera.position.clone();
+            const direction = startPos.clone().normalize();
+            const targetPos = direction.multiplyScalar(targetDist);
+
+            // Simple tween animation
+            const duration = 2000;
+            const startTime = performance.now();
+
+            function tweenCamera(t) {
+                const elapsed = t - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+
+                camera.position.lerpVectors(startPos, targetPos, eased);
+
+                if (progress < 1) {
+                    requestAnimationFrame(tweenCamera);
+                }
+            }
+
+            requestAnimationFrame(tweenCamera);
+        }
+
+        // ============== Preset Settings ==============
+        async function loadPresetSettings(preset) {
+            try {
+                const response = await fetch('./presets.json');
+                const presets = await response.json();
+
+                if (presets[preset]) {
+                    const p = presets[preset];
+                    settings.eta = p.eta;
+                    settings.mode2D = p.mode_2d;
+
+                    if (p.bloom_strength) {
+                        settings.bloomStrength = p.bloom_strength;
+                        updateBloom();
+                    }
+
+                    if (p.attractors && p.attractors[0]) {
+                        settings.attractor1X = p.attractors[0].x;
+                        settings.attractor1Y = p.attractors[0].y;
+                        settings.attractor1Z = p.attractors[0].z;
+                        settings.attractor1Strength = p.attractors[0].strength;
+                    }
+                }
+            } catch (err) {
+                console.warn('Could not load presets.json');
+            }
+        }
+
+        // ============== Regenerate ==============
+        function regenerateSimulation() {
+            // Create command to show user
+            const cmd = `python growth_sim.py --preset ${settings.preset}` +
+                (settings.mode2D ? ' --mode-2d' : '') +
+                (settings.eta !== 4.0 ? ` --eta ${settings.eta}` : '');
+
+            console.log('Run this command to regenerate:', cmd);
+            alert(`Run this command in terminal:\n\n${cmd}\n\nThe visualization will auto-reload when complete.`);
+        }
+
+        // ============== Screenshot ==============
+        function saveScreenshot() {
+            composer.render();
+            const link = document.createElement('a');
+            link.download = `laplacian-${settings.preset}-${Date.now()}.png`;
+            link.href = renderer.domElement.toDataURL('image/png');
+            link.click();
+        }
+
+        // ============== Utilities ==============
+        function lerp(a, b, t) {
+            return a + (b - a) * t;
+        }
+
+        function onResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // ============== Start ==============
+        init();
+    </script>
+</body>
+</html>
